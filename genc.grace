@@ -1,4 +1,5 @@
 #pragma DefaultVisibility=public
+#pragma ClassWrap
 import "io" as io
 import "sys" as sys
 import "ast" as ast
@@ -1904,6 +1905,7 @@ method checkimport(nm) {
         staticmodules.add(nm)
     }
     if (exists.not) then {
+        print(sys.execPath);
         errormessages.syntaxError("Failed finding import of '{nm}'.")atLine(1)
     }
 }
@@ -1989,26 +1991,12 @@ method processImports(values') {
         }
     }
 }
-method compile(vl, of, mn, rm, bt) {
+
+method compile(ast')asModule(name : String)to(outPath : String) modName(mn) runMode(rm) buildType(bm){
     util.log_verbose "generating C code..."
-    var argv := sys.argv
+
     var cmd
-    if (util.extensions.contains("ClassWrap")) then {
-        values := []
-        def inner = []
-        for (vl) do { v->
-            if ((v.kind == "import") || (v.kind == "dialect")) then {
-                values.push(v)
-            } else {
-                inner.push(v)
-            }
-        }
-        values.push(ast.methodNode.new(ast.identifierNode.new("new", false),
-            [ast.signaturePart.new("new")],
-            [ast.objectNode.new(inner, false)], false))
-    } else {
-        values := vl
-    }
+    values := ast'
     var nummethods := 2 + countbindings(values)
     for (values) do { v->
         if (v.kind == "vardec") then {
@@ -2020,49 +2008,52 @@ method compile(vl, of, mn, rm, bt) {
             }
         }
     }
-    outfile := of
+    outfile := outPath
     modname := mn
     escmodname := escapeident(modname)
     runmode := rm
-    buildtype := bt
-    outprint("#include <gracelib.h>")
-    outprint("#include <stdlib.h>")
+    buildtype := bm
+
+    def out = io.open(outPath)
+
+    out.writeln("#include <gracelib.h>")
+    out.writeln("#include <stdlib.h>")
     if (!util.extensions.contains("NoMain")) then {
-        outprint "#ifndef __CYGWIN__"
-        outprint "#pragma weak main"
-        outprint "#endif"
+        out.writeln "#ifndef __CYGWIN__"
+        out.writeln "#pragma weak main"
+        out.writeln "#endif"
     }
-    outprint("static char compilerRevision[] = \"{buildinfo.gitrevision}\";")
-    outprint("static Object undefined;")
-    outprint("extern Object done;")
-    outprint("extern Object _prelude;")
-    outprint("extern Object String;")
-    outprint("extern Object Number;")
-    outprint("extern Object Boolean;")
-    outprint("extern Object Dynamic;")
-    outprint("extern Object List;")
-    outprint("extern Object Block;")
-    outprint("extern Object Done;")
-    outprint("extern Object Type;")
-    outprint("extern Object GraceDefaultObject;")
-    outprint("extern Object sourceObject;")
-    outprint("static Object type_String;")
-    outprint("static Object type_Number;")
-    outprint("static Object type_Boolean;")
-    outprint("static Object type_Block;")
-    outprint("static Object type_Done;")
-    outprint("static Object argv;")
-    outprint("static Object emptyclosure;")
-    outprint("static Object prelude;")
-    outprint("static int isTailObject = 0;")
-    outprint("static Object inheritingObject = NULL;")
-    outprint("static const char modulename[] = \"{modname}\";");
-    outprint("Object module_StandardPrelude_init();");
-    outprint("static char *originalSourceLines[] = \{")
+    out.writeln("static char compilerRevision[] = \"{buildinfo.gitrevision}\";")
+    out.writeln("static Object undefined;")
+    out.writeln("extern Object done;")
+    out.writeln("extern Object _prelude;")
+    out.writeln("extern Object String;")
+    out.writeln("extern Object Number;")
+    out.writeln("extern Object Boolean;")
+    out.writeln("extern Object Dynamic;")
+    out.writeln("extern Object List;")
+    out.writeln("extern Object Block;")
+    out.writeln("extern Object Done;")
+    out.writeln("extern Object Type;")
+    out.writeln("extern Object GraceDefaultObject;")
+    out.writeln("extern Object sourceObject;")
+    out.writeln("static Object type_String;")
+    out.writeln("static Object type_Number;")
+    out.writeln("static Object type_Boolean;")
+    out.writeln("static Object type_Block;")
+    out.writeln("static Object type_Done;")
+    out.writeln("static Object argv;")
+    out.writeln("static Object emptyclosure;")
+    out.writeln("static Object prelude;")
+    out.writeln("static int isTailObject = 0;")
+    out.writeln("static Object inheritingObject = NULL;")
+    out.writeln("static const char modulename[] = \"{modname}\";");
+    out.writeln("Object module_StandardPrelude_init();");
+    out.writeln("static char *originalSourceLines[] = \{")
     for (util.cLines) do {l->
-        outprint("  \"{l}\",")
+        out.writeln("  \"{l}\",")
     }
-    outprint("  NULL\n\};")
+    out.writeln("  NULL\n\};")
     topLevelTypes.put("String", true)
     topLevelTypes.put("Number", true)
     topLevelTypes.put("Boolean", true)
@@ -2071,67 +2062,67 @@ method compile(vl, of, mn, rm, bt) {
     for (values) do {v->
         if (v.kind == "type") then {
             def typeid = escapeident(v.value)
-            outprint("static Object type_{typeid};")
+            out.writeln("static Object type_{typeid};")
             topLevelTypes.put(typeid, true)
         }
     }
-    out("Object module_{escmodname}_init() \{")
-    out("  int flags = 0;")
-    out("  int frame = gc_frame_new();")
-    out("  Object self = alloc_obj2({nummethods}, {nummethods});")
-    out "  self->class->definitionModule = modulename;"
-    out("  gc_root(self);")
+    out.writeln("Object module_{escmodname}_init() \{")
+    out.writeln("  int flags = 0;")
+    out.writeln("  int frame = gc_frame_new();")
+    out.writeln("  Object self = alloc_obj2({nummethods}, {nummethods});")
+    out.writeln "  self->class->definitionModule = modulename;"
+    out.writeln("  gc_root(self);")
     if (util.extensions.contains("NativePrelude")) then {
-        out("  prelude = grace_prelude();")
-        out("  adddatum2(self, grace_prelude(), 0);")
+        out.writeln("  prelude = grace_prelude();")
+        out.writeln("  adddatum2(self, grace_prelude(), 0);")
     } else {
-        out("  prelude = module_StandardPrelude_init();")
-        out("  adddatum2(self, prelude, 0);")
+        out.writeln("  prelude = module_StandardPrelude_init();")
+        out.writeln("  adddatum2(self, prelude, 0);")
     }
-    out("  addmethod2(self, \"outer\", &grace_userobj_outer);")
-    out("  setline(1);")
-    out("  setmodule(modulename);")
-    out("  setsource(originalSourceLines);")
+    out.writeln("  addmethod2(self, \"outer\", &grace_userobj_outer);")
+    out.writeln("  setline(1);")
+    out.writeln("  setmodule(modulename);")
+    out.writeln("  setsource(originalSourceLines);")
     var modn := "Module<{modname}>"
-    out("  setclassname(self, \"{modn}\");")
-    out("  Object *var_MatchFailed = alloc_var();")
-    out("  *var_MatchFailed = alloc_MatchFailed();")
-    out("  Object *var_noSuchValue = alloc_var();")
-    out("  *var_noSuchValue = done;")
-    out("  Object *var_done = alloc_var();")
-    out("  *var_done = done;")
-    out("  Object *var_String = alloc_var();")
-    out("  *var_String = String;")
-    out("  type_String = String;")
-    out("  Object *var_Block = alloc_var();")
-    out("  *var_Block = Block;")
-    out("  type_Block = Block;")
-    out("  Object *var_Done = alloc_var();")
-    out("  *var_Done = Done;")
-    out("  type_Done = Done;")
-    out("  Object *var_Number = alloc_var();")
-    out("  *var_Number = Number;")
-    out("  type_Number = Number;")
-    out("  Object *var_Boolean = alloc_var();")
-    out("  *var_Boolean = Boolean;")
-    out("  type_Boolean = Boolean;")
-    out("  Object *var_Dynamic = alloc_var();")
-    out("  *var_Dynamic = Dynamic;")
-    out("  Object *var_List = alloc_var();")
-    out("  *var_List = List;")
-    out("  Object *var_Type = alloc_var();")
-    out("  *var_Type = Type;")
-    out("  Object *var__prelude = alloc_var();")
-    out("  *var__prelude = grace_prelude();")
-    out("  gc_root(*var_MatchFailed);")
-    out("  emptyclosure = createclosure(0, \"empty\");")
-    out("  gc_root(emptyclosure);")
-    out("  struct StackFrameObject *stackframe = alloc_StackFrame({nummethods}, NULL);")
-    out("  gc_root((Object)stackframe);")
-    out("  pushstackframe(stackframe, \"module scope\");")
-    out("  Object *selfslot = &(stackframe->slots[0]);")
-    out("  *selfslot = self;")
-    out("  setframeelementname(stackframe, 0, \"self\");")
+    out.writeln("  setclassname(self, \"{modn}\");")
+    out.writeln("  Object *var_MatchFailed = alloc_var();")
+    out.writeln("  *var_MatchFailed = alloc_MatchFailed();")
+    out.writeln("  Object *var_noSuchValue = alloc_var();")
+    out.writeln("  *var_noSuchValue = done;")
+    out.writeln("  Object *var_done = alloc_var();")
+    out.writeln("  *var_done = done;")
+    out.writeln("  Object *var_String = alloc_var();")
+    out.writeln("  *var_String = String;")
+    out.writeln("  type_String = String;")
+    out.writeln("  Object *var_Block = alloc_var();")
+    out.writeln("  *var_Block = Block;")
+    out.writeln("  type_Block = Block;")
+    out.writeln("  Object *var_Done = alloc_var();")
+    out.writeln("  *var_Done = Done;")
+    out.writeln("  type_Done = Done;")
+    out.writeln("  Object *var_Number = alloc_var();")
+    out.writeln("  *var_Number = Number;")
+    out.writeln("  type_Number = Number;")
+    out.writeln("  Object *var_Boolean = alloc_var();")
+    out.writeln("  *var_Boolean = Boolean;")
+    out.writeln("  type_Boolean = Boolean;")
+    out.writeln("  Object *var_Dynamic = alloc_var();")
+    out.writeln("  *var_Dynamic = Dynamic;")
+    out.writeln("  Object *var_List = alloc_var();")
+    out.writeln("  *var_List = List;")
+    out.writeln("  Object *var_Type = alloc_var();")
+    out.writeln("  *var_Type = Type;")
+    out.writeln("  Object *var__prelude = alloc_var();")
+    out.writeln("  *var__prelude = grace_prelude();")
+    out.writeln("  gc_root(*var_MatchFailed);")
+    out.writeln("  emptyclosure = createclosure(0, \"empty\");")
+    out.writeln("  gc_root(emptyclosure);")
+    out.writeln("  struct StackFrameObject *stackframe = alloc_StackFrame({nummethods}, NULL);")
+    out.writeln("  gc_root((Object)stackframe);")
+    out.writeln("  pushstackframe(stackframe, \"module scope\");")
+    out.writeln("  Object *selfslot = &(stackframe->slots[0]);")
+    out.writeln("  *selfslot = self;")
+    out.writeln("  setframeelementname(stackframe, 0, \"self\");")
     var tmpo := output
     output := []
     definebindings(values, 1)
@@ -2142,23 +2133,23 @@ method compile(vl, of, mn, rm, bt) {
         if (o.kind == "type") then {
             compilenode(o)
             def typeid = escapeident(o.value)
-            out("type_{typeid} = *var_{typeid};")
+            out.writeln("type_{typeid} = *var_{typeid};")
         }
     }
     for (values) do { o ->
         if (o.kind == "inherits") then {
             def superobj = compilenode(o.value)
-            out("  self = setsuperobj(self, {superobj});")
-            out("  *selfslot = self;")
+            out.writeln("  self = setsuperobj(self, {superobj});")
+            out.writeln("  *selfslot = self;")
         }
         if ((o.kind != "method") && (o.kind != "type")) then {
             compilenode(o)
         }
     }
     if (dialectHasAtModuleEnd) then {
-        out("  partcv[0] = 1;")
-        out("  params[0] = self;")
-        out("  callmethodflags(prelude, \"atModuleEnd\", "
+        out.writeln("  partcv[0] = 1;")
+        out.writeln("  params[0] = self;")
+        out.writeln("  callmethodflags(prelude, \"atModuleEnd\", "
             ++ "1, partcv, params, CFLAG_SELF);")
     }
     for (globals) do {e->
@@ -2166,45 +2157,45 @@ method compile(vl, of, mn, rm, bt) {
     }
     var tmpo2 := output
     output := tmpo
-    out("  Object params[{paramsUsed}];")
-    out("  int partcv[{partsUsed}];")
+    out.writeln("  Object params[{paramsUsed}];")
+    out.writeln("  int partcv[{partsUsed}];")
     for (tmpo2) do { l->
-        out(l)
+        out.writeln(l)
     }
     paramsUsed := 1
     partsUsed := 1
-    out("  gc_frame_end(frame);")
-    out("  return self;")
-    out("}")
+    out.writeln("  gc_frame_end(frame);")
+    out.writeln("  return self;")
+    out.writeln("}")
     if (!util.extensions.contains("NoMain")) then {
-        out("int main(int argc, char **argv) \{")
-        out("  initprofiling();")
+        out.writeln("int main(int argc, char **argv) \{")
+        out.writeln("  initprofiling();")
         if (util.extensions.contains("LogCallGraph")) then {
             var lcgfile := util.extensions.get("LogCallGraph")
-            out("  enable_callgraph(\"{lcgfile}\");")
+            out.writeln("  enable_callgraph(\"{lcgfile}\");")
         }
         if (!util.extensions.contains("NativePrelude")) then {
-            //out("  prelude = module_StandardPrelude_init();")
+            //out.writeln("  prelude = module_StandardPrelude_init();")
         }
         util.runOnNew {
-            out("  setCompilerModulePath(\"{io.realpath(sys.execPath)}\");")
+            out.writeln("  setCompilerModulePath(\"{io.realpath(sys.execPath)}\");")
         } else {}
-        out("  gracelib_argv(argv);")
-        out("  Object params[1];")
-        out("  undefined = alloc_Undefined();")
-        out("  done = alloc_done();")
-        out("  Object tmp_argv = alloc_BuiltinList();")
-        out("  gc_root(tmp_argv);")
-        out("  int partcv_push[] = \{1\};")
-        out("  int i; for (i=0; i<argc; i++) \{")
-        out("    params[0] = alloc_String(argv[i]);")
-        out("    callmethod(tmp_argv, \"push\", 1, partcv_push, params);")
-        out("  \}")
-        out("  module_sys_init_argv(tmp_argv);")
-        out("  module_{escmodname}_init();")
-        out("  gracelib_stats();")
-        out("  return 0;")
-        out("}")
+        out.writeln("  gracelib_argv(argv);")
+        out.writeln("  Object params[1];")
+        out.writeln("  undefined = alloc_Undefined();")
+        out.writeln("  done = alloc_done();")
+        out.writeln("  Object tmp_argv = alloc_BuiltinList();")
+        out.writeln("  gc_root(tmp_argv);")
+        out.writeln("  int partcv_push[] = \{1\};")
+        out.writeln("  int i; for (i=0; i<argc; i++) \{")
+        out.writeln("    params[0] = alloc_String(argv[i]);")
+        out.writeln("    callmethod(tmp_argv, \"push\", 1, partcv_push, params);")
+        out.writeln("  \}")
+        out.writeln("  module_sys_init_argv(tmp_argv);")
+        out.writeln("  module_{escmodname}_init();")
+        out.writeln("  gracelib_stats();")
+        out.writeln("  return 0;")
+        out.writeln("}")
     }
     log_verbose("writing file.")
     for (topOutput) do { x ->
@@ -2214,76 +2205,80 @@ method compile(vl, of, mn, rm, bt) {
         outprint(x)
     }
 
-    if (runmode == "make") then {
-        log_verbose("compiling C code.")
-        outfile.close
-        cmd := "gcc -std=c99 -g -I\"{util.gracelibPath}\" -I\"{sys.execPath}/../include\" -I\"{sys.execPath}\" -o \"{modname}.gcn\" -c \"{modname}.c\""
-        if ((io.system(cmd)).not) then {
-            io.error.write("Fatal error: Failed C compilation of {modname}.\n")
-            sys.exit(1)
-        }
-        if (util.noexec.not) then {
-            log_verbose("linking.")
-            var dlbit := ""
-            var exportDynamicBit := ""
-            cmd := "ld -ldl -o /dev/null 2>/dev/null"
-            if (io.system(cmd)) then {
-                dlbit := "-ldl"
-            }
-            cmd := "ld -o /dev/null --export-dynamic -lc >/dev/null 2>&1"
-            if (io.system(cmd)) then {
-                exportDynamicBit := "-Wl,--export-dynamic"
-            }
-            cmd := "gcc -g -o \"{modname}\" -fPIC {exportDynamicBit} "
-                ++ "\"{modname}.gcn\" "
-                ++ "\"" ++ util.gracelibPath ++ "/gracelib.o\" "
-            for (linkfiles) do { fn ->
-                cmd := cmd ++ " " ++ fn
-            }
-            cmd := cmd ++ " -lm {dlbit}"
-            if ((io.system(cmd)).not) then {
-                io.error.write("Failed linking")
-                sys.exit(1)
-            }
-        }
-        if (util.dynamicModule) then {
-            log_verbose("producing dynamic module {modname}.gso.")
-            var dlbit := ""
-            var exportDynamicBit := ""
-            cmd := "ld -ldl -o /dev/null 2>/dev/null"
-            if (io.system(cmd)) then {
-                dlbit := "-ldl"
-            }
-            cmd := "ld -o /dev/null --export-dynamic -lc >/dev/null 2>&1"
-            if (io.system(cmd)) then {
-                exportDynamicBit := "-Wl,--export-dynamic"
-            } else {
-                cmd := "ld -o /dev/null -undefined dynamic_lookup -lc >/dev/null 2>&1"
-                if (io.system(cmd)) then {
-                    exportDynamicBit := "-Wl,-undefined -Wl,dynamic_lookup"
-                }
-            }
-            cmd := "gcc -g -I\"{util.gracelibPath}\" -I\"{sys.execPath}/../include\" -I\"{sys.execPath}\" -shared -o \"{modname}.gso\" -fPIC {exportDynamicBit} "
-                ++ "\"{modname}.c\" "
-            if ((io.system(cmd)).not) then {
-                io.error.write("Failed producing dynamic module.")
-                sys.exit(1)
-            }
-        }
-        log_verbose("done.")
-        xmodule.writeGCT(modname, modname ++ ".gct")
-            fromValues(values)modules(staticmodules)
-        if (buildtype == "run") then {
-            if (modname[1] != "/") then {
-                cmd := "./" ++ modname
-            } else {
-                cmd := modname
-            }
-            if (io.spawn(cmd).success.not) then {
-                io.error.write("minigrace: Program exited with error: "
-                    ++ modname ++ "\n")
-                sys.exit(1)
-            }
-        }
-    }
+    // if (mode != "source") then {
+    //     log_verbose("compiling C code.")
+    //     outfile.close
+    //     cmd := "gcc -std=c99 -g -I\"{util.gracelibPath}\" -I\"{sys.execPath}/../include\" -I\"{sys.execPath}\" -o \"{modname}.gcn\" -c \"{modname}.c\""
+    //     if ((io.system(cmd)).not) then {to(outPath : String) buildMode(mode)
+    //         io.error.write("Fatal error: Failed C compilation of {modname}.\n")
+    //         sys.exit(1)
+    //     }
+    //     if (util.noexec.not) then {
+    //         log_verbose("linking.")
+    //         var dlbit := ""
+    //         var exportDynamicBit := ""
+    //         cmd := "ld -ldl -o /dev/null 2>/dev/null"
+    //         if (io.system(cmd)) then {
+    //             dlbit := "-ldl"
+    //         }
+    //         cmd := "ld -o /dev/null --export-dynamic -lc >/dev/null 2>&1"
+    //         if (io.system(cmd)) then {
+    //             exportDynamicBit := "-Wl,--export-dynamic"
+    //         }
+    //         cmd := "gcc -g -o \"{modname}\" -fPIC {exportDynamicBit} "
+    //             ++ "\"{modname}.gcn\" "
+    //             ++ "\"" ++ util.gracelibPath ++ "/gracelib.o\" "
+    //         for (linkfiles) do { fn ->
+    //             cmd := cmd ++ " " ++ fn
+    //         }
+    //         cmd := cmd ++ " -lm {dlbit}"
+    //         if ((io.system(cmd)).not) then {
+    //             io.error.write("Failed linking")
+    //             sys.exit(1)
+    //         }
+    //     }
+    //     if (dynamicModule) then {
+    //         log_verbose("producing dynamic module {modname}.gso.")
+    //         var dlbit := ""
+    //         var exportDynamicBit := ""
+    //         cmd := "ld -ldl -o /dev/null 2>/dev/null"
+    //         if (io.system(cmd)) then {
+    //             dlbit := "-ldl"
+    //         }
+    //         cmd := "ld -o /dev/null --export-dynamic -lc >/dev/null 2>&1"
+    //         if (io.system(cmd)) then {
+    //             exportDynamicBit := "-Wl,--export-dynamic"
+    //         } else {
+    //             cmd := "ld -o /dev/null -undefined dynamic_lookup -lc >/dev/null 2>&1"
+    //             if (io.system(cmd)) then {
+    //                 exportDynamicBit := "-Wl,-undefined -Wl,dynamic_lookup"
+    //             }
+    //         }
+    //         cmd := "gcc -g -I\"{gracelibPathv}\" -I\"{sys.execPath}/../include\" -I\"{sys.execPath}\" -shared -o \"{modname}.gso\" -fPIC {exportDynamicBit} "
+    //             ++ "\"{modname}.c\" "
+    //         if ((io.system(cmd)).not) then {
+    //             io.error.write("Failed producing dynamic module.")
+    //             sys.exit(1)
+    //         }
+    //     }
+    //     log_verbose("done.")
+    //     xmodule.writeGCT(modname, modname ++ ".gct")
+    //         fromValues(values)modules(staticmodules)
+    //     if (buildtype == "run") then {
+    //         if (modname[1] != "/") then {
+    //             cmd := "./" ++ modname
+    //         } else {
+    //             cmd := modname
+    //         }
+    //         if (io.spawn(cmd).success.not) then {
+    //             io.error.write("minigrace: Program exited with error: "
+    //                 ++ modname ++ "\n")
+    //             sys.exit(1)
+    //         }
+    //     }
+    // }
+}
+
+method new {
+    self
 }
